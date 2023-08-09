@@ -1,3 +1,6 @@
+import os
+os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
+
 import os.path
 import math
 import argparse
@@ -14,9 +17,12 @@ from models.select_model import define_Model
 from utils import utils_transform
 import pickle
 from utils import utils_visualize as vis
+import gc
+import sys
+import argparse
 
 
-save_animation = False
+save_animation = True
 resolution = (800,800)
 
 def main(json_path='options/test_avatarposer.json'):
@@ -30,7 +36,14 @@ def main(json_path='options/test_avatarposer.json'):
     parser = argparse.ArgumentParser()
     parser.add_argument('-opt', type=str, default=json_path, help='Path to option JSON file.')
 
+    #parser.add_argument('-i', '--ind', type=int)
+
+    args = parser.parse_args()
+
     opt = option.parse(parser.parse_args().opt, is_train=True)
+
+    #ind = args.ind
+
 
     paths = (path for key, path in opt['path'].items() if 'pretrained' not in key)
     if isinstance(paths, str):
@@ -71,7 +84,7 @@ def main(json_path='options/test_avatarposer.json'):
 
     '''
     # ----------------------------------------
-    # Step--2 (creat dataloader)
+    # Step--2 (create dataloader)
     # ----------------------------------------
     '''
 
@@ -99,6 +112,8 @@ def main(json_path='options/test_avatarposer.json'):
     '''
 
     model = define_Model(opt)
+    
+    
 
     if opt['merge_bn'] and current_step > opt['merge_bn_startpoint']:
         logger.info('^_^ -----merging bnorm----- ^_^')
@@ -110,62 +125,95 @@ def main(json_path='options/test_avatarposer.json'):
     vel_error = []
     pos_error_hands = []
 
+    prev_pred_body = 0 #Added
     for index, test_data in enumerate(test_loader):
-        logger.info("testing the sample {}/{}".format(index, len(test_loader)))
+        try:
+            logger.info("testing the sample {}/{}".format(index, len(test_loader)))
 
-        model.feed_data(test_data, test=True)
+            model.feed_data(test_data, test=True)
 
-        model.test()
+            model.test()
 
-        body_parms_pred = model.current_prediction()
-        body_parms_gt = model.current_gt()
-        predicted_angle = body_parms_pred['pose_body']
-        predicted_position = body_parms_pred['position']
-        predicted_body = body_parms_pred['body']
+            body_parms_pred = model.current_prediction()
+            body_parms_gt = model.current_gt()
+            predicted_angle = body_parms_pred['pose_body']
+            predicted_position = body_parms_pred['position']
+            #print(predicted_position)
+            #print(predicted_position.shape)
+            predicted_body = body_parms_pred['body']
 
-        gt_angle = body_parms_gt['pose_body']
-        gt_position = body_parms_gt['position']
-        gt_body = body_parms_gt['body']
-
-
-
-        if index in [0, 10, 20] and save_animation:
-            video_dir = os.path.join(opt['path']['images'], str(index))
-            if not os.path.exists(video_dir):
-                os.makedirs(video_dir)
-
-            save_video_path_gt = os.path.join(video_dir, 'gt.avi')
-            if not os.path.exists(save_video_path_gt):
-                vis.save_animation(body_pose=gt_body, savepath=save_video_path_gt, bm = model.bm, fps=60, resolution = resolution)
-
-            save_video_path = os.path.join(video_dir, '{:d}.avi'.format(current_step))
-            vis.save_animation(body_pose=predicted_body, savepath=save_video_path, bm = model.bm, fps=60, resolution = resolution)
+            gt_angle = body_parms_gt['pose_body']
+            gt_position = body_parms_gt['position']
+            gt_body = body_parms_gt['body']
 
 
-        predicted_position = predicted_position#.cpu().numpy()
-        gt_position = gt_position#.cpu().numpy()
 
-        predicted_angle = predicted_angle.reshape(body_parms_pred['pose_body'].shape[0],-1,3)                    
-        gt_angle = gt_angle.reshape(body_parms_gt['pose_body'].shape[0],-1,3)
+            if index in [0] and save_animation: #[0,10,20]
+                video_dir = os.path.join(opt['path']['images'], str(index))
+                if not os.path.exists(video_dir):
+                    os.makedirs(video_dir)
+
+                save_video_path_gt = os.path.join(video_dir, 'gt.avi')
+                if not os.path.exists(save_video_path_gt):
+                    #vis.save_animation(body_pose=gt_body, body_pos = predicted_position, savepath=save_video_path_gt, bm=model.bm, fps=60, resolution=resolution)
+                    vis.save_animation(body_pose=gt_body, savepath=save_video_path_gt, bm = model.bm, fps=60, resolution = resolution)
+
+                print(index)
+                save_video_path = os.path.join(video_dir, str(index) + '.avi'.format(current_step)) #save_video_path = os.path.join(video_dir, '{:d}.avi'.format(current_step))
+                #vis.save_animation(body_pose=predicted_body, body_pos = predicted_position, savepath=save_video_path, bm = model.bm, fps=60, resolution = resolution, ind = ind)
+                vis.save_animation(body_pose=predicted_body, savepath=save_video_path, bm = model.bm, fps=60, resolution = resolution)
 
 
-        pos_error_ = torch.mean(torch.sqrt(torch.sum(torch.square(gt_position-predicted_position),axis=-1)))
-        pos_error_hands_ = torch.mean(torch.sqrt(torch.sum(torch.square(gt_position-predicted_position),axis=-1))[...,[20,21]])
 
-        gt_velocity = (gt_position[1:,...] - gt_position[:-1,...])*60
-        predicted_velocity = (predicted_position[1:,...] - predicted_position[:-1,...])*60
-        vel_error_ = torch.mean(torch.sqrt(torch.sum(torch.square(gt_velocity-predicted_velocity),axis=-1)))
+            predicted_position = predicted_position#.cpu().numpy()
+            gt_position = gt_position#.cpu().numpy()
 
-        pos_error.append(pos_error_)
-        vel_error.append(vel_error_)
+            predicted_angle = predicted_angle.reshape(body_parms_pred['pose_body'].shape[0],-1,3)
+            gt_angle = gt_angle.reshape(body_parms_gt['pose_body'].shape[0],-1,3)
 
-        pos_error_hands.append(pos_error_hands_)
+
+            pos_error_ = torch.mean(torch.sqrt(torch.sum(torch.square(gt_position-predicted_position),axis=-1)))
+            pos_error_hands_ = torch.mean(torch.sqrt(torch.sum(torch.square(gt_position-predicted_position),axis=-1))[...,[20,21]])
+
+            gt_velocity = (gt_position[1:,...] - gt_position[:-1,...])*60
+            predicted_velocity = (predicted_position[1:,...] - predicted_position[:-1,...])*60
+            vel_error_ = torch.mean(torch.sqrt(torch.sum(torch.square(gt_velocity-predicted_velocity),axis=-1)))
+
+            pos_error.append(pos_error_)
+            vel_error.append(vel_error_)
+
+            pos_error_hands.append(pos_error_hands_)
+
+            prev_pred_body = predicted_body #Added
+
+            #Added
+            #del gt_position
+            #del predicted_position
+            gt_position.detach().cpu()
+            predicted_position.detach().cpu()
+            gc.collect()
+            torch.cuda.empty_cache()
+            #break #To delete!
+        except Exception as e: #Added
+            print(e)
+            if index in [0, 10, 20] and save_animation:
+                print("error!")
+                video_dir = os.path.join(opt['path']['images'], str(index))
+
+                save_video_path_gt = os.path.join(video_dir, 'gt.avi')
+
+                save_video_path = os.path.join(video_dir, '{:d}.avi'.format(current_step))
+                #vis.save_animation(body_pose=predicted_body, body_pos = predicted_position, savepath=save_video_path, bm=model.bm, fps=60, resolution=resolution)
+                vis.save_animation(body_pose=predicted_body, savepath=save_video_path, bm=model.bm, fps=60, resolution=resolution)
+
 
 
 
     pos_error = sum(pos_error)/len(pos_error)
     vel_error = sum(vel_error)/len(vel_error)
     pos_error_hands = sum(pos_error_hands)/len(pos_error_hands)
+    
+    
 
 
     # testing log

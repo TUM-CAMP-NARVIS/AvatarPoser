@@ -66,6 +66,7 @@ class AvatarPoser(nn.Module):
 
     def forward(self, input_tensor, do_fk = True):
 
+        print(input_tensor)
 #        embed()
         x = self.linear_embedding(input_tensor)
         x = x.permute(1,0,2)

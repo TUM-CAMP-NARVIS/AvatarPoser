@@ -92,11 +92,12 @@ def main(json_path='options/train_avatarposer.json'):
     # 2) creat_dataloader for train and test
     # ----------------------------------------
     dataset_type = opt['datasets']['train']['dataset_type']
-    for phase, dataset_opt in opt['datasets'].items():
 
+    for phase, dataset_opt in opt['datasets'].items():
+        dataset_opt['dataloader_hch_size'] = dataset_opt['dataloader_batch_size']  
         if phase == 'train':
             train_set = define_Dataset(dataset_opt)
-            train_size = int(math.ceil(len(train_set) / dataset_opt['dataloader_batch_size']))
+            train_size = int(math.ceil(len(train_set) / dataset_opt['dataloader_hch_size']))
             logger.info('Number of train images: {:,d}, iters: {:,d}'.format(len(train_set), train_size))
             train_loader = DataLoader(train_set,
                                       batch_size=dataset_opt['dataloader_batch_size'],
@@ -221,8 +222,8 @@ def main(json_path='options/train_avatarposer.json'):
                         vis.save_animation(body_pose=predicted_body, savepath=save_video_path, bm = model.bm, fps=60, resolution = resolution)
 
 
-                    predicted_position = predicted_position#.cpu().numpy()
-                    gt_position = gt_position#.cpu().numpy()
+                    predicted_position = predicted_position.cpu().numpy() #.cpu().numpy()
+                    gt_position = gt_position.cpu().numpy() #.cpu().numpy()
 
                     predicted_angle = predicted_angle.reshape(body_parms_pred['pose_body'].shape[0],-1,3)                    
                     gt_angle = gt_angle.reshape(body_parms_gt['pose_body'].shape[0],-1,3)

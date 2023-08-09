@@ -13,8 +13,10 @@ from human_body_prior.tools.angle_continuous_repres import geodesic_loss_R
 from IPython import embed
 from utils.utils_transform import bgs
 from utils import utils_transform
-from utils import utils_visualize as vis
 from human_body_prior.tools.rotation_tools import aa2matrot,local2global_pose,matrot2aa
+import numpy 
+
+
 
 
 
@@ -146,10 +148,10 @@ class ModelAvatarPoser(ModelBase):
     # feed L/H data
     # ----------------------------------------
     def feed_data(self, data, need_H=True, test=False):
-        self.L = data['L'].to(self.device)
-        self.P = data['P']
+        self.L = data['L'].to(self.device) #hmd + controllers
+        self.P = data['P'] #body_parms_list
         self.Head_trans_global = data['Head_trans_global'].to(self.device)
-        self.H_global_orientation = data['H'].squeeze()[:,:6].to(self.device)
+        self.H_global_orientation = data['H'].squeeze()[:,:6].to(self.device) #joints + global orientation
         self.H_joint_rotation = data['H'].squeeze()[:,6:].to(self.device)
 #        self.H = torch.cat([self.H_global_orientation, self.H_joint_rotation],dim=-1).to(self.device)
         self.H_joint_position = self.netG.module.fk_module(self.H_global_orientation, self.H_joint_rotation , self.bm)
@@ -157,8 +159,15 @@ class ModelAvatarPoser(ModelBase):
     # ----------------------------------------
     # feed L to netG
     # ----------------------------------------
+    #Feed hmd + controllers to the network
     def netG_forward(self):
         self.E_global_orientation, self.E_joint_rotation, self.E_joint_position = self.netG(self.L)
+        #PyList(Pylist(PyInt))
+        global_orientation = self.E_global_orientation.tolist()
+        joint_rotation = self.E_joint_rotation.tolist()
+        joint_position = self.E_joint_position.tolist()
+        #Return PyDict(PyList(PyList(PyInt)))
+        return {'E_global_orientation': global_orientation, 'E_joint_rotation': joint_rotation, 'E_joint_position': joint_position}
 
 
     # ----------------------------------------
@@ -388,3 +397,10 @@ class ModelAvatarPoser(ModelBase):
     def info_params(self):
         msg = self.describe_params(self.netG)
         return msg
+
+    #Edited with my methods:
+    def feed_data_L(self, L, need_H=True, test=False):
+        self.L = torch.Tensor(L).to(self.device)
+
+    def feed_data_head_trans_global(self, head_trans_global, need_H=True, test=False):
+        self.Head_trans_global = torch.Tensor(head_trans_global).to(self.device)
